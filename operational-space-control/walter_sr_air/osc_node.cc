@@ -359,8 +359,8 @@ void OSCNode::timer_callback() {
         // **Joint Position Targets from Sim Main**
         // shin_pos_target = 3.1415/6.0 (~0.523 rad)
         // thigh_pos_target = 3.1415/6.0 (~0.523 rad)
-        double shin_pos_target = 0.5; // Slightly reduced the angle from pi/6
-        double thigh_pos_target = 0.5;
+        double shin_pos_target = 0.0; // Slightly reduced the angle from pi/6
+        double thigh_pos_target = 0.0;
 
         double rot_vel_target = 0.0; // Velocity target is zero
 
@@ -602,7 +602,7 @@ void OSCNode::publish_torque_command() {
         "rear_left_hip", "rear_left_knee", "rear_right_hip", "rear_right_knee",
         "front_left_hip", "front_left_knee", "front_right_hip", "front_right_knee"};
     
-    const double MAX_TORQUE = 0.6;
+    const double MAX_TORQUE = 0.7;
     const int TORQUE_CONTROL_MODE = 1; 
     const int VELOCITY_CONTROL_MODE = 2; 
 
