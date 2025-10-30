@@ -353,14 +353,14 @@ void OSCNode::timer_callback() {
         // **Control Parameters from Sim Main**
         // shin_kp = 100.0 * 1.0; shin_kv = 1.0 * 1.0;
         // thigh_kp = 100.0 * 1.0; thigh_kv = 1.0 * 1.0;
-        double shin_kp = 100.0; double shin_kv = 5.0;
-        double thigh_kp = 100.0; double thigh_kv = 5.0;
+        double shin_kp = 200.0; double shin_kv = 20.0;
+        double thigh_kp = 200.0; double thigh_kv = 20.0;
 
         // **Joint Position Targets from Sim Main**
         // shin_pos_target = 3.1415/6.0 (~0.523 rad)
         // thigh_pos_target = 3.1415/6.0 (~0.523 rad)
         double shin_pos_target = 0.0; // Slightly reduced the angle from pi/6
-        double thigh_pos_target = 0.0;
+        double thigh_pos_target = 0.534;
 
         double rot_vel_target = 0.0; // Velocity target is zero
 
