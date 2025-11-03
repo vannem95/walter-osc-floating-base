@@ -314,7 +314,7 @@ void OSCNode::timer_callback() {
 
     // --- 2. Mandatory Joint Limit Check (Outer Loop - ABSOLUTE Limits) ---
     // The limits are treated as absolute angles from the joint's zero position.
-    const double SHIN_LIMIT = M_PI / 2.0;
+    const double SHIN_LIMIT = M_PI / 1.0;
     const double THIGH_LIMIT = M_PI / 4.0;
     
     
@@ -361,7 +361,7 @@ void OSCNode::timer_callback() {
         // shin_pos_target = 3.1415/6.0 (~0.523 rad)
         // thigh_pos_target = 3.1415/6.0 (~0.523 rad)
         double shin_pos_target = 0.0; // Slightly reduced the angle from pi/6
-        double thigh_pos_target = 0.0; // previously 0.534
+        double thigh_pos_target = 0.534; // previously 0.534
 
         double rot_vel_target = 0.0; // Velocity target is zero
 
