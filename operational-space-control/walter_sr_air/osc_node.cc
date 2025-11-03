@@ -366,16 +366,16 @@ void OSCNode::timer_callback() {
         double rot_vel_target = 0.0; // Velocity target is zero
 
         // Shin DDQ Commands (Torso: +target, Head: -target)
-        double tl_ddq_cmd  = shin_kp * (initial_tl_angular_position_ + shin_pos_target - state_.motor_position(1)) + shin_kv * (rot_vel_target - state_.motor_velocity(1));
-        double tr_ddq_cmd  = shin_kp * (initial_tr_angular_position_ + shin_pos_target - state_.motor_position(3)) + shin_kv * (rot_vel_target - state_.motor_velocity(3));
-        double hl_ddq_cmd  = shin_kp * (initial_hl_angular_position_ - shin_pos_target - state_.motor_position(5)) + shin_kv * (rot_vel_target - state_.motor_velocity(5));
-        double hr_ddq_cmd  = shin_kp * (initial_hr_angular_position_ - shin_pos_target - state_.motor_position(7)) + shin_kv * (rot_vel_target - state_.motor_velocity(7));
+        double tl_ddq_cmd  = shin_kp * (0.0 + shin_pos_target - state_.motor_position(1)) + shin_kv * (rot_vel_target - state_.motor_velocity(1));
+        double tr_ddq_cmd  = shin_kp * (0.0 + shin_pos_target - state_.motor_position(3)) + shin_kv * (rot_vel_target - state_.motor_velocity(3));
+        double hl_ddq_cmd  = shin_kp * (0.0 - shin_pos_target - state_.motor_position(5)) + shin_kv * (rot_vel_target - state_.motor_velocity(5));
+        double hr_ddq_cmd  = shin_kp * (0.0 - shin_pos_target - state_.motor_position(7)) + shin_kv * (rot_vel_target - state_.motor_velocity(7));
 
         // Thigh DDQ Commands (Torso: +target, Head: -target)
-        double tlh_ddq_cmd = thigh_kp * (initial_tlh_angular_position_ + thigh_pos_target - state_.motor_position(0)) + thigh_kv * (rot_vel_target - state_.motor_velocity(0));
-        double trh_ddq_cmd = thigh_kp * (initial_trh_angular_position_ + thigh_pos_target - state_.motor_position(2)) + thigh_kv * (rot_vel_target - state_.motor_velocity(2));
-        double hlh_ddq_cmd = thigh_kp * (initial_hlh_angular_position_ - thigh_pos_target - state_.motor_position(4)) + thigh_kv * (rot_vel_target - state_.motor_velocity(4));
-        double hrh_ddq_cmd = thigh_kp * (initial_hrh_angular_position_ - thigh_pos_target - state_.motor_position(6)) + thigh_kv * (rot_vel_target - state_.motor_velocity(6));
+        double tlh_ddq_cmd = thigh_kp * (0.0 + thigh_pos_target - state_.motor_position(0)) + thigh_kv * (rot_vel_target - state_.motor_velocity(0));
+        double trh_ddq_cmd = thigh_kp * (0.0 + thigh_pos_target - state_.motor_position(2)) + thigh_kv * (rot_vel_target - state_.motor_velocity(2));
+        double hlh_ddq_cmd = thigh_kp * (0.0 - thigh_pos_target - state_.motor_position(4)) + thigh_kv * (rot_vel_target - state_.motor_velocity(4));
+        double hrh_ddq_cmd = thigh_kp * (0.0 - thigh_pos_target - state_.motor_position(6)) + thigh_kv * (rot_vel_target - state_.motor_velocity(6));
 
         // --- 2c. Populate Taskspace Targets Matrix ---
         // Indices: 0-torso (base), 1-4 shin, 5-8 thigh
