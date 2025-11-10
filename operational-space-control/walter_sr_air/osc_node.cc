@@ -83,7 +83,7 @@ OSCNode::OSCNode(const std::string& xml_path)
         RCLCPP_FATAL(this->get_logger(), "Failed to load Mujoco Model: %s", error);
         throw std::runtime_error("Failed to load Mujoco Model.");
     }
-    mj_model_->opt.timestep = 0.005;
+    mj_model_->opt.timestep = 0.002;
     mj_data_ = mj_makeData(mj_model_);
 
     mj_resetDataKeyframe(mj_model_, mj_data_, 0); // 
@@ -694,29 +694,34 @@ void OSCNode::publish_torque_command() {
     );
     double latency_ms = static_cast<double>(latency.count()) / 1000.0;
 
-    std::stringstream ss;
-    ss << std::fixed << std::setprecision(4);
-    
-    ss << "[" << (safety_override_active_ ? "SAFETY" : "OSC") << "] ";
-    ss << "Latency: " << latency_ms << " ms. "; 
 
-    // Print Detected Positions
-    ss << "Pos Detected: [";
-    for (size_t i = 0; i < model::nu_size; ++i) {
-        ss << last_detected_motor_position_(i);
-        if (i < model::nu_size - 1) { ss << ", "; }
-    }
-    ss << "] ";
+    std::cout << "latency_ms: " << latency_ms << std::endl;  
 
-    // Print Sent Torques
-    ss << "Torque Sent: [";
-    for (size_t i = 0; i < model::nu_size; ++i) {
-        // Use the final torque value from the command message
-        ss << command_msg->motor_commands[i].feedforward_torque;
-        if (i < model::nu_size - 1) { ss << ", "; }
-    }
-    ss << "]";
+
+
+    // std::stringstream ss;
+    // ss << std::fixed << std::setprecision(4);
     
-    RCLCPP_INFO(this->get_logger(), "%s", ss.str().c_str());    
+    // ss << "[" << (safety_override_active_ ? "SAFETY" : "OSC") << "] ";
+    // ss << "Latency: " << latency_ms << " ms. "; 
+
+    // // Print Detected Positions
+    // ss << "Pos Detected: [";
+    // for (size_t i = 0; i < model::nu_size; ++i) {
+    //     ss << last_detected_motor_position_(i);
+    //     if (i < model::nu_size - 1) { ss << ", "; }
+    // }
+    // ss << "] ";
+
+    // // Print Sent Torques
+    // ss << "Torque Sent: [";
+    // for (size_t i = 0; i < model::nu_size; ++i) {
+    //     // Use the final torque value from the command message
+    //     ss << command_msg->motor_commands[i].feedforward_torque;
+    //     if (i < model::nu_size - 1) { ss << ", "; }
+    // }
+    // ss << "]";
+    
+    // RCLCPP_INFO(this->get_logger(), "%s", ss.str().c_str());    
     
 }
