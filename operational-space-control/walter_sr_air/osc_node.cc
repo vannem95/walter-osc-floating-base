@@ -206,7 +206,7 @@ OSCNode::OSCNode(const std::string& xml_path)
     torque_publisher_ = this->create_publisher<Command>("walter/command", 10);
     // torque_publisher_ = this->create_publisher<OSCTorqueCommand>("walter/command", 10);
     // New: 5000 microseconds (5 ms = 200 Hz)
-    timer_ = this->create_wall_timer(std::chrono::microseconds(500), std::bind(&OSCNode::timer_callback, this));
+    timer_ = this->create_wall_timer(std::chrono::microseconds(5000), std::bind(&OSCNode::timer_callback, this));
 }
 
 OSCNode::~OSCNode() {
