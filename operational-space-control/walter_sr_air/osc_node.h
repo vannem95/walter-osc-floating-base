@@ -6,6 +6,9 @@
 #include <mutex>
 #include <chrono>
 
+#include <sstream>
+#include <iomanip>
+
 #include "absl/status/status.h"
 #include "absl/log/absl_check.h"
 
@@ -176,4 +179,12 @@ private:
     Vector<optimization::z_size> z_lb_;
     Vector<optimization::z_size> z_ub_;
     Vector<optimization::bineq_sz> bineq_lb_;
+
+    // Time storage for latency calculation
+    std::chrono::time_point<std::chrono::high_resolution_clock> state_read_time_;
+    std::chrono::time_point<std::chrono::high_resolution_clock> torque_ready_time_;
+
+    // Storage for the motor position detected at state read time
+    Vector<model::nu_size> last_detected_motor_position_;    
+    
 };

@@ -83,7 +83,7 @@ OSCNode::OSCNode(const std::string& xml_path)
         RCLCPP_FATAL(this->get_logger(), "Failed to load Mujoco Model: %s", error);
         throw std::runtime_error("Failed to load Mujoco Model.");
     }
-    mj_model_->opt.timestep = 0.002;
+    mj_model_->opt.timestep = 0.005;
     mj_data_ = mj_makeData(mj_model_);
 
     mj_resetDataKeyframe(mj_model_, mj_data_, 0); // 
@@ -200,7 +200,7 @@ OSCNode::OSCNode(const std::string& xml_path)
 
     // --- ROS 2 communication setup ---
     state_subscriber_ = this->create_subscription<OSCMujocoState>(
-        "/state_estimator/state", 10, std::bind(&OSCNode::state_callback, this, std::placeholders::_1));
+        "/state_estimator/state", 1, std::bind(&OSCNode::state_callback, this, std::placeholders::_1));
     // taskspace_targets_subscriber_ = this->create_subscription<OSCTaskspaceTargets>(
     //     "osc/taskspace_targets", 10, std::bind(&OSCNode::taskspace_targets_callback, this, std::placeholders::_1));
     torque_publisher_ = this->create_publisher<Command>("walter/command", 1);
@@ -222,7 +222,14 @@ void OSCNode::state_callback(const OSCMujocoState::SharedPtr msg) {
         state_.motor_position(i) = static_cast<double>(msg->motor_position[i]);
         state_.motor_velocity(i) = static_cast<double>(msg->motor_velocity[i]);
         state_.torque_estimate(i) = static_cast<double>(msg->torque_estimate[i]);
+
+        // CAPTURE DETECTED POSITION
+        last_detected_motor_position_(i) = state_.motor_position(i);        
+        
     }
+
+    // CAPTURE STATE READ TIME
+    state_read_time_ = std::chrono::high_resolution_clock::now();    
     
     for (size_t i = 0; i < 4; ++i) {
         state_.body_rotation(i) = static_cast<double>(msg->body_rotation[i]);
@@ -674,6 +681,42 @@ void OSCNode::publish_torque_command() {
         }
     }
 
+    torque_ready_time_ = std::chrono::high_resolution_clock::now();
+    
     // --- 3. Publish ---
     torque_publisher_->publish(std::move(command_msg));
+
+    // --- 5. RCLCPP Print Confirmation and Latency ---
+    
+    // Calculate the control loop latency
+    auto latency = std::chrono::duration_cast<std::chrono::microseconds>(
+        torque_ready_time_ - state_read_time_
+    );
+    double latency_ms = static_cast<double>(latency.count()) / 1000.0;
+
+    std::stringstream ss;
+    ss << std::fixed << std::setprecision(4);
+    
+    ss << "[" << (safety_override_active_ ? "SAFETY" : "OSC") << "] ";
+    ss << "Latency: " << latency_ms << " ms. "; 
+
+    // Print Detected Positions
+    ss << "Pos Detected: [";
+    for (size_t i = 0; i < model::nu_size; ++i) {
+        ss << last_detected_motor_position_(i);
+        if (i < model::nu_size - 1) { ss << ", "; }
+    }
+    ss << "] ";
+
+    // Print Sent Torques
+    ss << "Torque Sent: [";
+    for (size_t i = 0; i < model::nu_size; ++i) {
+        // Use the final torque value from the command message
+        ss << command_msg->motor_commands[i].feedforward_torque;
+        if (i < model::nu_size - 1) { ss << ", "; }
+    }
+    ss << "]";
+    
+    RCLCPP_INFO(this->get_logger(), "%s", ss.str().c_str());    
+    
 }
