@@ -314,7 +314,7 @@ void OSCNode::timer_callback() {
 
     // --- 2. Mandatory Joint Limit Check (Outer Loop - ABSOLUTE Limits) ---
     // The limits are treated as absolute angles from the joint's zero position.
-    const double SHIN_LIMIT = M_PI / 1.0;
+    const double SHIN_LIMIT = M_PI / 2.0;
     const double THIGH_LIMIT = M_PI / 4.0;
     
     
