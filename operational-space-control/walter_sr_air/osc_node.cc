@@ -214,100 +214,54 @@ OSCNode::~OSCNode() {
     mj_deleteModel(mj_model_);
 }
 
-// Full implementation of all methods
+// ===============================================================================================================
 void OSCNode::state_callback(const OSCMujocoState::SharedPtr msg) {
     std::lock_guard<std::mutex> lock(state_mutex_);
     // Manually copy and cast each member to the correct double type
-    for (size_t i = 0; i < model::nu_size; ++i) {
-        state_.motor_position(i) = static_cast<double>(msg->motor_position[i]);
-        state_.motor_velocity(i) = static_cast<double>(msg->motor_velocity[i]);
-        state_.torque_estimate(i) = static_cast<double>(msg->torque_estimate[i]);
+    if (!is_initial_position_captured_) {    
+        for (size_t i = 0; i < model::nu_size; ++i) {
+            state_.motor_position(i) = static_cast<double>(msg->motor_position[i]);
+            state_.motor_velocity(i) = static_cast<double>(msg->motor_velocity[i]);
+            state_.torque_estimate(i) = static_cast<double>(msg->torque_estimate[i]);
 
-        // CAPTURE DETECTED POSITION
-        last_detected_motor_position_(i) = state_.motor_position(i);        
+            // CAPTURE DETECTED POSITION
+            last_detected_motor_position_(i) = state_.motor_position(i);        
+            
+        }
+
+        // CAPTURE STATE READ TIME
+        state_read_time_ = std::chrono::high_resolution_clock::now();    
         
-    }
+        for (size_t i = 0; i < 4; ++i) {
+            state_.body_rotation(i) = static_cast<double>(msg->body_rotation[i]);
+        }
 
-    // CAPTURE STATE READ TIME
-    state_read_time_ = std::chrono::high_resolution_clock::now();    
-    
-    for (size_t i = 0; i < 4; ++i) {
-        state_.body_rotation(i) = static_cast<double>(msg->body_rotation[i]);
-    }
+        for (size_t i = 0; i < 3; ++i) {
+            state_.linear_body_velocity(i) = static_cast<double>(msg->linear_body_velocity[i]);
+            state_.angular_body_velocity(i) = static_cast<double>(msg->angular_body_velocity[i]);
+        }
 
-    for (size_t i = 0; i < 3; ++i) {
-        state_.linear_body_velocity(i) = static_cast<double>(msg->linear_body_velocity[i]);
-        state_.angular_body_velocity(i) = static_cast<double>(msg->angular_body_velocity[i]);
+        for (size_t i = 0; i < model::contact_site_ids_size; ++i) {
+            state_.contact_mask(i) = static_cast<double>(msg->contact_mask[i]);
+        }
+        is_initial_position_captured_ = true;        
     }
-
-    for (size_t i = 0; i < model::contact_site_ids_size; ++i) {
-        state_.contact_mask(i) = static_cast<double>(msg->contact_mask[i]);
-    }
+    // --- NEW: Set State Gating Flag ---
+    is_state_received_ = true;    
 }
 
-// void OSCNode::taskspace_targets_callback(const OSCTaskspaceTargets::SharedPtr msg) {
-//     std::lock_guard<std::mutex> lock(taskspace_targets_mutex_);
-//     taskspace_targets_ = Eigen::Map<Matrix<model::site_ids_size, 6>>(msg->targets.data());
-// }
 
 
-
-
-
-// ---------------------------------------------------------------------------------------------------------
-//                                            Zero target
-// ---------------------------------------------------------------------------------------------------------
-// void OSCNode::timer_callback() {
-//     std::lock_guard<std::mutex> lock_state(state_mutex_);
-//     // Get the current time from the ROS 2 clock
-//     double current_time = this->now().seconds();
-
-//     // Replicate the logic from your original `main` function
-//     Vector<3> position_target = Vector<3>(
-//         initial_position_(0) + 0.2 * current_time, 
-//         initial_position_(1), 
-//         initial_position_(2)
-//     );
-//     Vector<3> velocity_target = Vector<3>(
-//         0.2, 0.0, 0.0
-//     );
-//     Vector<3> body_position = Vector<3>(0.2, 0.0, 0.0);
-
-//     Eigen::Quaternion<double> body_rotation = Eigen::Quaternion<double>(state_.body_rotation(0), state_.body_rotation(1), state_.body_rotation(2), state_.body_rotation(3));
-//     Vector<3> position_error = position_target - body_position;
-//     Vector<3> velocity_error = velocity_target - state_.linear_body_velocity;
-//     Vector<3> rotation_error = (Eigen::Quaternion<double>(1, 0, 0, 0) * body_rotation.conjugate()).vec();
-//     Vector<3> angular_velocity_error = Vector<3>::Zero() - state_.angular_body_velocity;
-
-//     double torso_lin_kp = 0.0;
-//     double torso_lin_kv = 0.0;
-//     double torso_ang_kp = 0.0;
-//     double torso_ang_kv = 0.0;        
-
-//     Vector<3> linear_control = torso_lin_kp * (position_error) + torso_lin_kv * (velocity_error);
-//     Vector<3> angular_control = torso_ang_kp * (rotation_error) + torso_ang_kv * (angular_velocity_error);
-//     Eigen::Vector<double, 6> cmd {linear_control(0), 0, 0, angular_control(0), angular_control(1), angular_control(2)};
-
-//     // Update the task-space targets member variable directly
-//     taskspace_targets_.row(0) = cmd;
-//     update_mj_data();
-//     update_osc_data();
-//     update_optimization_data();
-//     std::ignore = update_optimization();
-//     solve_optimization();
-//     publish_torque_command();
-// }
-// ---------------------------------------------------------------------------------------------------------
-
-
-
-
-// ---------------------------------------------------------------------------------------------------------
-//                                            Angular Position Control
-// ---------------------------------------------------------------------------------------------------------
+// ===============================================================================================================
 void OSCNode::timer_callback() {
     std::lock_guard<std::mutex> lock_state(state_mutex_);
     
+    if (!is_state_received_) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, 
+            "Waiting for initial state message to start control.");
+        return; 
+    }
+        
     double current_time = this->now().seconds();
     
     // Check for first call or zero time step
@@ -408,7 +362,7 @@ void OSCNode::timer_callback() {
 
 
 
-
+// ===============================================================================================================
 void OSCNode::update_mj_data() {
     Vector<model::nq_size> qpos = Vector<model::nq_size>::Zero();
     Vector<model::nv_size> qvel = Vector<model::nv_size>::Zero();
@@ -425,7 +379,7 @@ void OSCNode::update_mj_data() {
 
     points_ = Eigen::Map<Matrix<model::site_ids_size, 3>>(mj_data_->site_xpos)(site_ids_, Eigen::placeholders::all);
 }
-
+// ===============================================================================================================
 void OSCNode::update_osc_data() {
     Matrix<model::nv_size, model::nv_size> mass_matrix = Matrix<model::nv_size, model::nv_size>::Zero();
     mj_fullM(mj_model_, mass_matrix.data(), mj_data_->qM);
@@ -474,6 +428,7 @@ void OSCNode::update_osc_data() {
     osc_data_.previous_qd = generalized_velocities;
 }
 
+// ===============================================================================================================
 void OSCNode::update_optimization_data() {
     auto mass_matrix = matrix_utils::transformMatrix<double, model::nv_size, model::nv_size, matrix_utils::ColumnMajor>(osc_data_.mass_matrix.data());
     auto coriolis_matrix = matrix_utils::transformMatrix<double, model::nv_size, 1, matrix_utils::ColumnMajor>(osc_data_.coriolis_matrix.data());
@@ -497,6 +452,7 @@ void OSCNode::update_optimization_data() {
     opt_data_.bineq = bineq_matrix;
 }
 
+// ===============================================================================================================
 absl::Status OSCNode::set_up_optimization() {
     MatrixColMajor<optimization::constraint_matrix_rows, optimization::constraint_matrix_cols> A;
     A << opt_data_.Aeq, opt_data_.Aineq, Abox_;
@@ -529,6 +485,7 @@ absl::Status OSCNode::set_up_optimization() {
     return result;
 }
 
+// ===============================================================================================================
 absl::Status OSCNode::update_optimization() {
     MatrixColMajor<optimization::constraint_matrix_rows, optimization::constraint_matrix_cols> A;
     A << opt_data_.Aeq, opt_data_.Aineq, Abox_;
@@ -573,35 +530,21 @@ absl::Status OSCNode::update_optimization() {
     return result;
 }
 
+// ===============================================================================================================
 void OSCNode::solve_optimization() {
     exit_code_ = solver_.Solve();
     solution_ = solver_.primal_solution();
     dual_solution_ = solver_.dual_solution();
 }
 
+// ===============================================================================================================
 void OSCNode::reset_optimization() {
     Vector<optimization::constraint_matrix_cols> primal_vector = Vector<optimization::constraint_matrix_cols>::Zero();
     Vector<optimization::constraint_matrix_rows> dual_vector = Vector<optimization::constraint_matrix_rows>::Zero();
     std::ignore = solver_.SetWarmStart(primal_vector, dual_vector);
 }
 
-// void OSCNode::publish_torque_command() {
-//     Vector<model::nu_size> torque_command = solution_(Eigen::seqN(optimization::dv_idx, optimization::u_size));
-//     auto torque_msg = std::make_unique<OSCTorqueCommand>();
-//     for (size_t i = 0; i < torque_command.size(); ++i) {
-//         torque_msg->torque_command[i] = static_cast<float>(torque_command(i));
-//     }
-//     torque_publisher_->publish(std::move(torque_msg));
-//     std::cout << "Published torque command: ";
-//     for (size_t i = 0; i < torque_command.size(); ++i) {
-//         std::cout << torque_command(i) << " ";
-//     }
-//     std::cout << std::endl;  
-// }
-
-// NOTE: You must ensure the torque_publisher_ in your header is defined as:
-// rclcpp::Publisher<Command::SharedPtr> torque_publisher_;
-
+// ===============================================================================================================
 void OSCNode::publish_torque_command() {
     // --- Constants ---
     const std::set<std::string> reversed_joints_ = {
@@ -695,33 +638,6 @@ void OSCNode::publish_torque_command() {
     double latency_ms = static_cast<double>(latency.count()) / 1000.0;
 
 
-    std::cout << "latency_ms (state ready to torque ready): " << latency_ms << std::endl;  
-
-
-
-    // std::stringstream ss;
-    // ss << std::fixed << std::setprecision(4);
-    
-    // // ss << "[" << (safety_override_active_ ? "SAFETY" : "OSC") << "] ";
-    // // ss << "Latency: " << latency_ms << " ms. "; 
-
-    // // Print Detected Positions
-    // ss << "Pos Detected: [";
-    // for (size_t i = 0; i < model::nu_size; ++i) {
-    //     ss << last_detected_motor_position_(i);
-    //     if (i < model::nu_size - 1) { ss << ", "; }
-    // }
-    // ss << "] ";
-
-    // // Print Sent Torques
-    // ss << "Torque Sent: [";
-    // for (size_t i = 0; i < model::nu_size; ++i) {
-    //     // Use the final torque value from the command message
-    //     ss << command_msg->motor_commands[i].feedforward_torque;
-    //     if (i < model::nu_size - 1) { ss << ", "; }
-    // }
-    // ss << "]";
-    
-    // RCLCPP_INFO(this->get_logger(), "%s", ss.str().c_str());    
+    std::cout << "latency_ms (state ready to torque ready): " << latency_ms << std::endl;   
     
 }

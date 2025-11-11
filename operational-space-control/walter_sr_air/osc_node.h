@@ -186,5 +186,14 @@ private:
 
     // Storage for the motor position detected at state read time
     Vector<model::nu_size> last_detected_motor_position_;    
+
+    // --- Synchronization & Initialization Flags ---
+    bool is_state_received_ = false; 
+    bool is_initial_position_captured_ = false; 
+
+    // --- Initial State Storage ---
+    // Stores the position of all motors from the first valid sensor message.
+    // Used to calculate targets relative to the actual starting pose.
+    Vector<model::nu_size> initial_motor_position_from_sensor_ = Vector<model::nu_size>::Zero();    
     
 };
