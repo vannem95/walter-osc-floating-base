@@ -215,39 +215,35 @@ OSCNode::~OSCNode() {
 }
 
 // ===============================================================================================================
+// Full implementation of all methods
 void OSCNode::state_callback(const OSCMujocoState::SharedPtr msg) {
     std::lock_guard<std::mutex> lock(state_mutex_);
     // Manually copy and cast each member to the correct double type
-    if (!is_initial_position_captured_) {    
-        for (size_t i = 0; i < model::nu_size; ++i) {
-            state_.motor_position(i) = static_cast<double>(msg->motor_position[i]);
-            state_.motor_velocity(i) = static_cast<double>(msg->motor_velocity[i]);
-            state_.torque_estimate(i) = static_cast<double>(msg->torque_estimate[i]);
+    for (size_t i = 0; i < model::nu_size; ++i) {
+        state_.motor_position(i) = static_cast<double>(msg->motor_position[i]);
+        state_.motor_velocity(i) = static_cast<double>(msg->motor_velocity[i]);
+        state_.torque_estimate(i) = static_cast<double>(msg->torque_estimate[i]);
 
-            // CAPTURE DETECTED POSITION
-            last_detected_motor_position_(i) = state_.motor_position(i);        
-            
-        }
-
-        // CAPTURE STATE READ TIME
-        state_read_time_ = std::chrono::high_resolution_clock::now();    
+        // CAPTURE DETECTED POSITION
+        last_detected_motor_position_(i) = state_.motor_position(i);        
         
-        for (size_t i = 0; i < 4; ++i) {
-            state_.body_rotation(i) = static_cast<double>(msg->body_rotation[i]);
-        }
-
-        for (size_t i = 0; i < 3; ++i) {
-            state_.linear_body_velocity(i) = static_cast<double>(msg->linear_body_velocity[i]);
-            state_.angular_body_velocity(i) = static_cast<double>(msg->angular_body_velocity[i]);
-        }
-
-        for (size_t i = 0; i < model::contact_site_ids_size; ++i) {
-            state_.contact_mask(i) = static_cast<double>(msg->contact_mask[i]);
-        }
-        is_initial_position_captured_ = true;        
     }
-    // --- NEW: Set State Gating Flag ---
-    is_state_received_ = true;    
+
+    // CAPTURE STATE READ TIME
+    state_read_time_ = std::chrono::high_resolution_clock::now();    
+    
+    for (size_t i = 0; i < 4; ++i) {
+        state_.body_rotation(i) = static_cast<double>(msg->body_rotation[i]);
+    }
+
+    for (size_t i = 0; i < 3; ++i) {
+        state_.linear_body_velocity(i) = static_cast<double>(msg->linear_body_velocity[i]);
+        state_.angular_body_velocity(i) = static_cast<double>(msg->angular_body_velocity[i]);
+    }
+
+    for (size_t i = 0; i < model::contact_site_ids_size; ++i) {
+        state_.contact_mask(i) = static_cast<double>(msg->contact_mask[i]);
+    }
 }
 
 
@@ -256,12 +252,6 @@ void OSCNode::state_callback(const OSCMujocoState::SharedPtr msg) {
 void OSCNode::timer_callback() {
     std::lock_guard<std::mutex> lock_state(state_mutex_);
     
-    if (!is_state_received_) {
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, 
-            "Waiting for initial state message to start control.");
-        return; 
-    }
-        
     double current_time = this->now().seconds();
     
     // Check for first call or zero time step
@@ -545,6 +535,7 @@ void OSCNode::reset_optimization() {
 }
 
 // ===============================================================================================================
+
 void OSCNode::publish_torque_command() {
     // --- Constants ---
     const std::set<std::string> reversed_joints_ = {
@@ -638,6 +629,33 @@ void OSCNode::publish_torque_command() {
     double latency_ms = static_cast<double>(latency.count()) / 1000.0;
 
 
-    std::cout << "latency_ms (state ready to torque ready): " << latency_ms << std::endl;   
+    std::cout << "latency_ms (state ready to torque ready): " << latency_ms << std::endl;  
+
+
+
+    // std::stringstream ss;
+    // ss << std::fixed << std::setprecision(4);
+    
+    // // ss << "[" << (safety_override_active_ ? "SAFETY" : "OSC") << "] ";
+    // // ss << "Latency: " << latency_ms << " ms. "; 
+
+    // // Print Detected Positions
+    // ss << "Pos Detected: [";
+    // for (size_t i = 0; i < model::nu_size; ++i) {
+    //     ss << last_detected_motor_position_(i);
+    //     if (i < model::nu_size - 1) { ss << ", "; }
+    // }
+    // ss << "] ";
+
+    // // Print Sent Torques
+    // ss << "Torque Sent: [";
+    // for (size_t i = 0; i < model::nu_size; ++i) {
+    //     // Use the final torque value from the command message
+    //     ss << command_msg->motor_commands[i].feedforward_torque;
+    //     if (i < model::nu_size - 1) { ss << ", "; }
+    // }
+    // ss << "]";
+    
+    // RCLCPP_INFO(this->get_logger(), "%s", ss.str().c_str());    
     
 }
