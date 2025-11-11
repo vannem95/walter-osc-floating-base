@@ -312,7 +312,7 @@ void OSCNode::timer_callback() {
         // shin_pos_target = 3.1415/6.0 (~0.523 rad)
         // thigh_pos_target = 3.1415/6.0 (~0.523 rad)
         double shin_pos_target = 0.0; // Slightly reduced the angle from pi/6
-        double thigh_pos_target = 0.3; // previously 0.534
+        double thigh_pos_target = 0.4; // previously 0.534
 
         double rot_vel_target = 0.0; // Velocity target is zero
 
