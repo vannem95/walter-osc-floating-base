@@ -699,8 +699,8 @@ void OSCNode::publish_torque_command() {
 
 
 
-    // std::stringstream ss;
-    // ss << std::fixed << std::setprecision(4);
+    std::stringstream ss;
+    ss << std::fixed << std::setprecision(4);
     
     // ss << "[" << (safety_override_active_ ? "SAFETY" : "OSC") << "] ";
     // ss << "Latency: " << latency_ms << " ms. "; 
