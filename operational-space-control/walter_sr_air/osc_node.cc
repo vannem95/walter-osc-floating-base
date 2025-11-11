@@ -695,7 +695,7 @@ void OSCNode::publish_torque_command() {
     double latency_ms = static_cast<double>(latency.count()) / 1000.0;
 
 
-    std::cout << "latency_ms: " << latency_ms << std::endl;  
+    std::cout << "latency_ms (state ready to torque ready): " << latency_ms << std::endl;  
 
 
 
@@ -705,23 +705,23 @@ void OSCNode::publish_torque_command() {
     // ss << "[" << (safety_override_active_ ? "SAFETY" : "OSC") << "] ";
     // ss << "Latency: " << latency_ms << " ms. "; 
 
-    // // Print Detected Positions
-    // ss << "Pos Detected: [";
-    // for (size_t i = 0; i < model::nu_size; ++i) {
-    //     ss << last_detected_motor_position_(i);
-    //     if (i < model::nu_size - 1) { ss << ", "; }
-    // }
-    // ss << "] ";
+    // Print Detected Positions
+    ss << "Pos Detected: [";
+    for (size_t i = 0; i < model::nu_size; ++i) {
+        ss << last_detected_motor_position_(i);
+        if (i < model::nu_size - 1) { ss << ", "; }
+    }
+    ss << "] ";
 
-    // // Print Sent Torques
-    // ss << "Torque Sent: [";
-    // for (size_t i = 0; i < model::nu_size; ++i) {
-    //     // Use the final torque value from the command message
-    //     ss << command_msg->motor_commands[i].feedforward_torque;
-    //     if (i < model::nu_size - 1) { ss << ", "; }
-    // }
-    // ss << "]";
+    // Print Sent Torques
+    ss << "Torque Sent: [";
+    for (size_t i = 0; i < model::nu_size; ++i) {
+        // Use the final torque value from the command message
+        ss << command_msg->motor_commands[i].feedforward_torque;
+        if (i < model::nu_size - 1) { ss << ", "; }
+    }
+    ss << "]";
     
-    // RCLCPP_INFO(this->get_logger(), "%s", ss.str().c_str());    
+    RCLCPP_INFO(this->get_logger(), "%s", ss.str().c_str());    
     
 }
