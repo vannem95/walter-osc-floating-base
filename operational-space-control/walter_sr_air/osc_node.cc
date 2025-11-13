@@ -161,7 +161,7 @@ OSCNode::OSCNode(const std::string& xml_path)
     
     state_callback(std::make_shared<OSCMujocoState>(initial_state_msg));
     
-    update_mj_data();
+    // update_mj_data();
 
     // --- Optimization Initialization ---
     // Instead of using a dummy ROS message to set state_ to zero, 
