@@ -193,5 +193,6 @@ private:
     bool is_state_received_ = false;    
     double time_mujoco_update_ms_ = 0.0;
     double time_casadi_update_ms_ = 0.0;
-    double time_osqp_solve_ms_ = 0.0;    
+    double time_osqp_solve_ms_ = 0.0;
+    double time_wait_for_execution_ms_ = 0.0;        
 };

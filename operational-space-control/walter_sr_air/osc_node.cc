@@ -259,6 +259,10 @@ void OSCNode::timer_callback() {
     
     double current_time = this->now().seconds();
 
+    // --- DIAGNOSTIC START: Capture the exact start time ---
+    auto t_start_execution = std::chrono::high_resolution_clock::now(); 
+    // --- DIAGNOSTIC END ---
+
     { // --- CRITICAL SECTION START (Locked, FAST) ---
         std::lock_guard<std::mutex> lock_state(state_mutex_);
         
@@ -274,6 +278,8 @@ void OSCNode::timer_callback() {
         }
 
     } // --- CRITICAL SECTION END (Lock released!) ---
+
+    time_wait_for_execution_ms_ = std::chrono::duration<double, std::milli>(t_start_execution - local_state_read_time).count();    
 
     // Check for first call or zero time step
     if (last_time_ == 0.0) {
@@ -648,8 +654,9 @@ void OSCNode::publish_torque_command(bool safety_override_active_local,
 
     if (!safety_override_active_local) {
         RCLCPP_INFO(this->get_logger(), 
-            "Latency: %.3f ms | Kinematics: %.3f ms | CasADi: %.3f ms | OSQP Solve: %.3f ms | Total Internal: %.3f ms",
+            "Latency: %.3f ms | **OS Wait: %.3f ms** | Kinematics: %.3f ms | CasADi: %.3f ms | OSQP Solve: %.3f ms | Total Internal: %.3f ms",
             latency_ms,
+            time_wait_for_execution_ms_, // NEW: Shows delay before computation starts            
             time_mujoco_update_ms_, 
             time_casadi_update_ms_, 
             time_osqp_solve_ms_,
