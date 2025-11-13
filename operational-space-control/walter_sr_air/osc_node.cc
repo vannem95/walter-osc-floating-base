@@ -245,6 +245,7 @@ void OSCNode::state_callback(const OSCMujocoState::SharedPtr msg) {
     for (size_t i = 0; i < model::contact_site_ids_size; ++i) {
         state_.contact_mask(i) = static_cast<double>(msg->contact_mask[i]);
     }
+    is_state_received_ = true;    
 }
 
 
