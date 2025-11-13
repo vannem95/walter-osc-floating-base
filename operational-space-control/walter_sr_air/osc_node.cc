@@ -326,6 +326,10 @@ void OSCNode::timer_callback() {
     if (!local_safety_override_active) {
 
         // 1. Update Mujoco Data for Kinematics (using local_state)
+        
+        // --- TIMING POINT A: START MUJOCO/KINEMATICS ---
+        auto t_start_kinematics = std::chrono::high_resolution_clock::now();        
+        
         update_mj_data(local_state); 
 
         // 2b. Define Targets and Calculate DDQ Commands 
@@ -358,9 +362,25 @@ void OSCNode::timer_callback() {
         
         // Solve Optimization
         update_osc_data();
+        
+        // --- TIMING POINT B: END MUJOCO/KINEMATICS, START CASADI/OSQP DATA ---        
+        auto t_start_casadi = std::chrono::high_resolution_clock::now();        
+        
         update_optimization_data();
         std::ignore = update_optimization(local_state.contact_mask); 
+
+        // --- TIMING POINT C: END CASADI/OSQP DATA, START SOLVE ---
+        auto t_start_solve = std::chrono::high_resolution_clock::now();
+        
         solve_optimization();
+        
+        // --- TIMING POINT D: END SOLVE ---
+        auto t_end_solve = std::chrono::high_resolution_clock::now();
+        
+        // Calculate and store internal execution times 
+        time_mujoco_update_ms_ = std::chrono::duration<double, std::milli>(t_start_casadi - t_start_kinematics).count();
+        time_casadi_update_ms_ = std::chrono::duration<double, std::milli>(t_start_solve - t_start_casadi).count();
+        time_osqp_solve_ms_ = std::chrono::duration<double, std::milli>(t_end_solve - t_start_solve).count();                
     }
     // Publish using the determined safety status and the captured timestamp
     publish_torque_command(local_safety_override_active, local_state_read_time); 
@@ -625,5 +645,16 @@ void OSCNode::publish_torque_command(bool safety_override_active_local,
 
     // --- 3. Publish ---
     torque_publisher_->publish(std::move(command_msg));
-    std::cout << "latency_ms (state ready to torque ready): " << latency_ms << std::endl; 
+
+    if (!safety_override_active_local) {
+        RCLCPP_INFO(this->get_logger(), 
+            "Latency: %.3f ms | Kinematics: %.3f ms | CasADi: %.3f ms | OSQP Solve: %.3f ms | Total Internal: %.3f ms",
+            latency_ms,
+            time_mujoco_update_ms_, 
+            time_casadi_update_ms_, 
+            time_osqp_solve_ms_,
+            time_mujoco_update_ms_ + time_casadi_update_ms_ + time_osqp_solve_ms_);
+    } else {
+        RCLCPP_WARN(this->get_logger(), "Safety Override Active. Latency: %.3f ms", latency_ms);
+    }
 }
