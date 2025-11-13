@@ -88,17 +88,21 @@ private:
     void state_callback(const OSCMujocoState::SharedPtr msg);
     void timer_callback();
 
-    // Internal helper functions
-    void update_mj_data();
+    // Internal helper functions (REFACTORED SIGNATURES)
+    // Now takes the state to eliminate reliance on the shared state_ member.
+    void update_mj_data(const State& current_state);
     void update_osc_data();
     void update_optimization_data();
-    absl::Status set_up_optimization();
-    absl::Status update_optimization();
+    absl::Status set_up_optimization(const Vector<model::contact_site_ids_size>& contact_mask);
+    // Now takes contact mask data to update bounds
+    absl::Status update_optimization(const Vector<model::contact_site_ids_size>& contact_mask); 
     void solve_optimization();
     void reset_optimization();
-    void publish_torque_command();
-
+    // Now takes the safety status
+    void publish_torque_command(bool safety_override_active_local, 
+                                    std::chrono::time_point<std::chrono::high_resolution_clock> state_read_time_local);
     // Helper functions from the original main
+    
     template <typename T>
     bool contains(const std::vector<T>& vec, const T& value);
     std::vector<int> getSiteIdsOnSameBodyAsGeom(const mjModel* m, int geom_id);

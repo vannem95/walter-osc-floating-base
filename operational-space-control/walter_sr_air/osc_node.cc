@@ -191,13 +191,14 @@ OSCNode::OSCNode(const std::string& xml_path)
     Vector<model::nq_size> qpos = Eigen::Map<Vector<model::nq_size>>(mj_data_->qpos);
     // initial_position_ = qpos(Eigen::seqN(0, 3));    
     
+    Vector<model::contact_site_ids_size> initial_contact_mask = Vector<model::contact_site_ids_size>::Zero();
 
-    absl::Status result = set_up_optimization();
+    absl::Status result = set_up_optimization(initial_contact_mask);
     if (!result.ok()) {
         RCLCPP_FATAL(this->get_logger(), "Failed to initialize optimization: %s", result.message().data());
         throw std::runtime_error("Failed to initialize optimization.");
-    }
-
+    }    
+    
     // --- ROS 2 communication setup ---
     state_subscriber_ = this->create_subscription<OSCMujocoState>(
         "/state_estimator/state", 1, std::bind(&OSCNode::state_callback, this, std::placeholders::_1));
@@ -250,87 +251,103 @@ void OSCNode::state_callback(const OSCMujocoState::SharedPtr msg) {
 
 // ===============================================================================================================
 void OSCNode::timer_callback() {
-    std::lock_guard<std::mutex> lock_state(state_mutex_);
+    // --- 1. DECLARE LOCAL COPIES ---
+    State local_state; 
+    bool local_safety_override_active;
+    std::chrono::time_point<std::chrono::high_resolution_clock> local_state_read_time;
     
     double current_time = this->now().seconds();
-    
+
+    { // --- CRITICAL SECTION START (Locked, FAST) ---
+        std::lock_guard<std::mutex> lock_state(state_mutex_);
+        
+        // Copy the shared state members needed for the control loop
+        local_state = state_; 
+        local_safety_override_active = safety_override_active_;
+        local_state_read_time = state_read_time_;
+        
+        // Check for state gating before proceeding
+        if (!is_state_received_) {
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Waiting for initial state message...");
+            return; 
+        }
+
+    } // --- CRITICAL SECTION END (Lock released!) ---
+
     // Check for first call or zero time step
     if (last_time_ == 0.0) {
-        update_mj_data(); // Ensure mj_data_ is consistent
+        update_mj_data(local_state); // Pass local state
         last_time_ = current_time;
         return; 
     }
 
     
 
-    // --- 2. Mandatory Joint Limit Check (Outer Loop - ABSOLUTE Limits) ---
-    // The limits are treated as absolute angles from the joint's zero position.
-    const double SHIN_LIMIT = M_PI / 2.0;
-    const double THIGH_LIMIT = M_PI / 4.0;
+    // --- 2. Mandatory Joint Limit Check (Outer Loop - UNLOCKED) ---
+    // If local_safety_override_active is true, limit_hit remains true, and the check loop is skipped.
+    bool limit_hit = local_safety_override_active; 
     
-    
-    // Check Thighs (0, 2, 4, 6)
-    for (size_t i : {0, 2, 4, 6}) {
-        if (std::abs(state_.motor_position(i)) >= THIGH_LIMIT) {
-            safety_override_active_ = true;
-            RCLCPP_WARN_ONCE(this->get_logger(), "Absolute THIGH limit (%.2f rad) hit on motor index %zu. Overriding control.", THIGH_LIMIT, i);
-            break; 
-        }
-    }
-    
-    // Check Shins (1, 3, 5, 7)
-    if (!safety_override_active_) {
-        for (size_t i : {1, 3, 5, 7}) {
-            if (std::abs(state_.motor_position(i)) >= SHIN_LIMIT) {
-                safety_override_active_ = true;
-                RCLCPP_WARN_ONCE(this->get_logger(), "Absolute SHIN limit (%.2f rad) hit on motor index %zu. Overriding control.", SHIN_LIMIT, i);
+    if (!local_safety_override_active) {
+        
+        const double SHIN_LIMIT = M_PI / 2.0;
+        const double THIGH_LIMIT = M_PI / 4.0;
+        
+        // Check Thighs (0, 2, 4, 6) using local_state.motor_position
+        for (size_t i : {0, 2, 4, 6}) {
+            if (std::abs(local_state.motor_position(i)) >= THIGH_LIMIT) {
+                limit_hit = true;
+                RCLCPP_WARN_ONCE(this->get_logger(), "Absolute THIGH limit (%.2f rad) hit on motor index %zu. Overriding control.", THIGH_LIMIT, i);
                 break; 
             }
         }
+        
+        // Check Shins (1, 3, 5, 7)
+        if (!limit_hit) {
+            for (size_t i : {1, 3, 5, 7}) {
+                if (std::abs(local_state.motor_position(i)) >= SHIN_LIMIT) {
+                    limit_hit = true;
+                    RCLCPP_WARN_ONCE(this->get_logger(), "Absolute SHIN limit (%.2f rad) hit on motor index %zu. Overriding control.", SHIN_LIMIT, i);
+                    break; 
+                }
+            }
+        }
+
+        // If a new limit was hit, set the SHARED safety flag to true (permanently)
+        if (limit_hit) { 
+            std::lock_guard<std::mutex> lock_state(state_mutex_);
+            safety_override_active_ = true;
+            local_safety_override_active = true; // Update local for subsequent steps
+        }
     }
 
 
+    // --- 3. Conditional OSC Calculation and Solve (UNLOCKED) ---
+    if (!local_safety_override_active) {
 
-    // --- 3. Conditional OSC Calculation and Solve ---
-    if (!safety_override_active_) {
+        // 1. Update Mujoco Data for Kinematics (using local_state)
+        update_mj_data(local_state); 
 
-        // --- 1. Update Mujoco Data for Kinematics ---
-        // This maps the received state_.qpos/qvel into mj_data_ and runs mj_forward.
-        update_mj_data(); 
-
-        // --- 2b. Define Targets and Calculate DDQ Commands (from sim main) ---
-        // This is a conversion of the angular position tracking PD controller in the sim's main loop.
-        
-        // **Control Parameters from Sim Main**
-        // shin_kp = 100.0 * 1.0; shin_kv = 1.0 * 1.0;
-        // thigh_kp = 100.0 * 1.0; thigh_kv = 1.0 * 1.0;
+        // 2b. Define Targets and Calculate DDQ Commands 
         double factor = 1.0;
         double shin_kp = 100.0*factor; double shin_kv = 5.0*factor;
         double thigh_kp = 100.0*factor; double thigh_kv = 5.0*factor;
+        double shin_pos_target = 0.0;
+        double thigh_pos_target = 0.3; 
+        double rot_vel_target = 0.0; 
 
-        // **Joint Position Targets from Sim Main**
-        // shin_pos_target = 3.1415/6.0 (~0.523 rad)
-        // thigh_pos_target = 3.1415/6.0 (~0.523 rad)
-        double shin_pos_target = 0.0; // Slightly reduced the angle from pi/6
-        double thigh_pos_target = 0.3; // previously 0.534
+        // Shin DDQ Commands (using local_state)
+        double tl_ddq_cmd  = shin_kp * (0.0 + shin_pos_target - local_state.motor_position(1)) + shin_kv * (rot_vel_target - local_state.motor_velocity(1));
+        double tr_ddq_cmd  = shin_kp * (0.0 + shin_pos_target - local_state.motor_position(3)) + shin_kv * (rot_vel_target - local_state.motor_velocity(3));
+        double hl_ddq_cmd  = shin_kp * (0.0 - shin_pos_target - local_state.motor_position(5)) + shin_kv * (rot_vel_target - local_state.motor_velocity(5));
+        double hr_ddq_cmd  = shin_kp * (0.0 - shin_pos_target - local_state.motor_position(7)) + shin_kv * (rot_vel_target - local_state.motor_velocity(7));
 
-        double rot_vel_target = 0.0; // Velocity target is zero
+        // Thigh DDQ Commands (using local_state)
+        double tlh_ddq_cmd = thigh_kp * (0.0 + thigh_pos_target - local_state.motor_position(0)) + thigh_kv * (rot_vel_target - local_state.motor_velocity(0));
+        double trh_ddq_cmd = thigh_kp * (0.0 + thigh_pos_target - local_state.motor_position(2)) + thigh_kv * (rot_vel_target - local_state.motor_velocity(2));
+        double hlh_ddq_cmd = thigh_kp * (0.0 - thigh_pos_target - local_state.motor_position(4)) + thigh_kv * (rot_vel_target - local_state.motor_velocity(4));
+        double hrh_ddq_cmd = thigh_kp * (0.0 - thigh_pos_target - local_state.motor_position(6)) + thigh_kv * (rot_vel_target - local_state.motor_velocity(6));
 
-        // Shin DDQ Commands (Torso: +target, Head: -target)
-        double tl_ddq_cmd  = shin_kp * (0.0 + shin_pos_target - state_.motor_position(1)) + shin_kv * (rot_vel_target - state_.motor_velocity(1));
-        double tr_ddq_cmd  = shin_kp * (0.0 + shin_pos_target - state_.motor_position(3)) + shin_kv * (rot_vel_target - state_.motor_velocity(3));
-        double hl_ddq_cmd  = shin_kp * (0.0 - shin_pos_target - state_.motor_position(5)) + shin_kv * (rot_vel_target - state_.motor_velocity(5));
-        double hr_ddq_cmd  = shin_kp * (0.0 - shin_pos_target - state_.motor_position(7)) + shin_kv * (rot_vel_target - state_.motor_velocity(7));
-
-        // Thigh DDQ Commands (Torso: +target, Head: -target)
-        double tlh_ddq_cmd = thigh_kp * (0.0 + thigh_pos_target - state_.motor_position(0)) + thigh_kv * (rot_vel_target - state_.motor_velocity(0));
-        double trh_ddq_cmd = thigh_kp * (0.0 + thigh_pos_target - state_.motor_position(2)) + thigh_kv * (rot_vel_target - state_.motor_velocity(2));
-        double hlh_ddq_cmd = thigh_kp * (0.0 - thigh_pos_target - state_.motor_position(4)) + thigh_kv * (rot_vel_target - state_.motor_velocity(4));
-        double hrh_ddq_cmd = thigh_kp * (0.0 - thigh_pos_target - state_.motor_position(6)) + thigh_kv * (rot_vel_target - state_.motor_velocity(6));
-
-        // --- 2c. Populate Taskspace Targets Matrix ---
-        // Indices: 0-torso (base), 1-4 shin, 5-8 thigh
-        // The DDQ command is placed in the angular acceleration slot (index 4) for all sites.
+        // Populate Taskspace Targets Matrix 
         taskspace_targets_.setZero(); 
         taskspace_targets_.row(1)(4) = tl_ddq_cmd; taskspace_targets_.row(2)(4) = tr_ddq_cmd;
         taskspace_targets_.row(3)(4) = hl_ddq_cmd; taskspace_targets_.row(4)(4) = hr_ddq_cmd;
@@ -338,13 +355,14 @@ void OSCNode::timer_callback() {
         taskspace_targets_.row(7)(4) = hlh_ddq_cmd; taskspace_targets_.row(8)(4) = hrh_ddq_cmd;
 
         
-        // --- 3d. Solve Optimization ---
+        // Solve Optimization
         update_osc_data();
         update_optimization_data();
-        std::ignore = update_optimization();
+        std::ignore = update_optimization(local_state.contact_mask); 
         solve_optimization();
     }
-    publish_torque_command();
+    // Publish using the determined safety status and the captured timestamp
+    publish_torque_command(local_safety_override_active, local_state_read_time); 
 }
 // ---------------------------------------------------------------------------------------------------------
 
@@ -353,13 +371,12 @@ void OSCNode::timer_callback() {
 
 
 // ===============================================================================================================
-void OSCNode::update_mj_data() {
+void OSCNode::update_mj_data(const State& current_state) {
     Vector<model::nq_size> qpos = Vector<model::nq_size>::Zero();
     Vector<model::nv_size> qvel = Vector<model::nv_size>::Zero();
 
-    qpos << state_.motor_position;
-    qvel << state_.motor_velocity;
-
+    qpos << current_state.motor_position;
+    qvel << current_state.motor_velocity;
 
     mj_data_->qpos = qpos.data();
     mj_data_->qvel = qvel.data();
@@ -443,20 +460,19 @@ void OSCNode::update_optimization_data() {
 }
 
 // ===============================================================================================================
-absl::Status OSCNode::set_up_optimization() {
+absl::Status OSCNode::set_up_optimization(const Vector<model::contact_site_ids_size>& contact_mask) {
     MatrixColMajor<optimization::constraint_matrix_rows, optimization::constraint_matrix_cols> A;
     A << opt_data_.Aeq, opt_data_.Aineq, Abox_;
     Vector<optimization::bounds_size> lb;
     Vector<optimization::bounds_size> ub;
     Vector<optimization::z_size> z_lb_masked = z_lb_;
     Vector<optimization::z_size> z_ub_masked = z_ub_;
-    {
-        std::lock_guard<std::mutex> lock(state_mutex_);
-        for(int i = 0; i < model::contact_site_ids_size; i++) {
-            z_lb_masked(Eigen::seqN(3 * i, 3)) *= state_.contact_mask(i);
-            z_ub_masked(Eigen::seqN(3 * i, 3)) *= state_.contact_mask(i);
-        }
+    
+    for(int i = 0; i < model::contact_site_ids_size; i++) {
+        z_lb_masked(Eigen::seqN(3 * i, 3)) *= contact_mask(i);
+        z_ub_masked(Eigen::seqN(3 * i, 3)) *= contact_mask(i);
     }
+
     lb << opt_data_.beq, bineq_lb_, dv_lb_, u_lb_, z_lb_masked;
     ub << opt_data_.beq, opt_data_.bineq, dv_ub_, u_ub_, z_ub_masked;
     
@@ -476,7 +492,7 @@ absl::Status OSCNode::set_up_optimization() {
 }
 
 // ===============================================================================================================
-absl::Status OSCNode::update_optimization() {
+absl::Status OSCNode::update_optimization(const Vector<model::contact_site_ids_size>& contact_mask) {
     MatrixColMajor<optimization::constraint_matrix_rows, optimization::constraint_matrix_cols> A;
     A << opt_data_.Aeq, opt_data_.Aineq, Abox_;
     Vector<optimization::bounds_size> lb;
@@ -484,13 +500,9 @@ absl::Status OSCNode::update_optimization() {
     Vector<optimization::z_size> z_lb_masked = z_lb_;
     Vector<optimization::z_size> z_ub_masked = z_ub_;
 
-    
-    {
-        // std::lock_guard<std::mutex> lock(state_mutex_);
-        for(int i = 0; i < model::contact_site_ids_size; i++) {
-            z_lb_masked(Eigen::seqN(3 * i, 3)) *= state_.contact_mask(i);
-            z_ub_masked(Eigen::seqN(3 * i, 3)) *= state_.contact_mask(i);
-        }
+    for(int i = 0; i < model::contact_site_ids_size; i++) {
+        z_lb_masked(Eigen::seqN(3 * i, 3)) *= contact_mask(i);
+        z_ub_masked(Eigen::seqN(3 * i, 3)) *= contact_mask(i);
     }
     
     lb << opt_data_.beq, bineq_lb_, dv_lb_, u_lb_, z_lb_masked;
@@ -536,7 +548,9 @@ void OSCNode::reset_optimization() {
 
 // ===============================================================================================================
 
-void OSCNode::publish_torque_command() {
+void OSCNode::publish_torque_command(bool safety_override_active_local, 
+                                     std::chrono::time_point<std::chrono::high_resolution_clock> state_read_time_local) 
+{
     // --- Constants ---
     const std::set<std::string> reversed_joints_ = {
         "rear_left_hip", "rear_left_knee", "front_left_hip", "front_left_knee"};
@@ -548,31 +562,24 @@ void OSCNode::publish_torque_command() {
     const int TORQUE_CONTROL_MODE = 1; 
     const int VELOCITY_CONTROL_MODE = 2; 
 
-
-    // -------------------------------  DEBUG  -------------------------------
-    const bool DEBUG = true; 
-    // -------------------------------  DEBUG  -------------------------------
-
-
     // --- 1. Initialize Command Message ---
     auto command_msg = std::make_unique<Command>(); 
     command_msg->master_gain = 1.0; 
     command_msg->motor_commands.resize(model::nu_size);
 
     // --- 2. Determine Overall Mode and Populate Commands ---
-    if (safety_override_active_) {
-        // SCENARIO A: SAFETY OVERRIDE (Limit Hit)
-        // Global mode is set to the safety mode
+    if (safety_override_active_local) {
+        // SCENARIO A: PERMANENT SAFETY OVERRIDE
         command_msg->high_level_control_mode = 2; 
         
         for (size_t i = 0; i < model::nu_size; ++i) {
             command_msg->motor_commands[i].name = MOTOR_NAMES[i];
             
-            // Force Position Control and maintain current position (q_current)
+            // NOTE: HIGH GAIN HOLD IS THE RECOMMENDED SAFETY FIX (using Velocity mode is weak)
             command_msg->motor_commands[i].control_mode = VELOCITY_CONTROL_MODE;
             command_msg->motor_commands[i].position_setpoint = 0.0; 
             command_msg->motor_commands[i].velocity_setpoint = 0.0;
-            command_msg->motor_commands[i].feedforward_torque = 0.0; // Torque is handled by the high Kp/Kd
+            command_msg->motor_commands[i].feedforward_torque = 0.0; 
             command_msg->motor_commands[i].kp = 0.0; 
             command_msg->motor_commands[i].kd = 0.0;
             command_msg->motor_commands[i].input_mode = 1;   
@@ -580,32 +587,23 @@ void OSCNode::publish_torque_command() {
         }
 
     } else {
-        // SCENARIO B: NORMAL OPERATION (Limits Safe)
-        // Global mode is set to the normal OSC mode
+        // SCENARIO B: NORMAL OPERATION 
         command_msg->high_level_control_mode = 2;
         
-        // Retrieve the solved torque (only valid if OSC solve was executed)
         Vector<model::nu_size> osc_torque = solution_(Eigen::seqN(optimization::dv_idx, optimization::u_size));
 
         for (size_t i = 0; i < model::nu_size; ++i) {
             double final_torque = osc_torque(i);
             
-            // Apply Polarity Reversal
             if (reversed_joints_.count(MOTOR_NAMES[i])) {
                 final_torque *= -1.0;
             }
-            
-            // Apply Torque Limit (Clamping)
             final_torque = std::clamp(final_torque, -MAX_TORQUE, MAX_TORQUE);
 
-            // Send Torque Command
             command_msg->motor_commands[i].name = MOTOR_NAMES[i];
             command_msg->motor_commands[i].control_mode = TORQUE_CONTROL_MODE;
-
-
             command_msg->motor_commands[i].feedforward_torque = static_cast<double>(final_torque); 
-            
-            // Zero out unused PD terms for Torque Mode
+            // Zero out unused PD terms
             command_msg->motor_commands[i].position_setpoint = 0.0;
             command_msg->motor_commands[i].velocity_setpoint = 0.0; 
             command_msg->motor_commands[i].kp = 0.0; 
@@ -614,48 +612,17 @@ void OSCNode::publish_torque_command() {
             command_msg->motor_commands[i].enable = true; 
         }
     }
-
-    torque_ready_time_ = std::chrono::high_resolution_clock::now();
     
-    // --- 3. Publish ---
-    torque_publisher_->publish(std::move(command_msg));
-
-    // --- 5. RCLCPP Print Confirmation and Latency ---
+    // --- Time Logging ---
+    std::chrono::high_resolution_clock::time_point torque_ready_time_local = std::chrono::high_resolution_clock::now();
     
     // Calculate the control loop latency
     auto latency = std::chrono::duration_cast<std::chrono::microseconds>(
-        torque_ready_time_ - state_read_time_
+        torque_ready_time_local - state_read_time_local
     );
     double latency_ms = static_cast<double>(latency.count()) / 1000.0;
 
-
-    std::cout << "latency_ms (state ready to torque ready): " << latency_ms << std::endl;  
-
-
-
-    // std::stringstream ss;
-    // ss << std::fixed << std::setprecision(4);
-    
-    // // ss << "[" << (safety_override_active_ ? "SAFETY" : "OSC") << "] ";
-    // // ss << "Latency: " << latency_ms << " ms. "; 
-
-    // // Print Detected Positions
-    // ss << "Pos Detected: [";
-    // for (size_t i = 0; i < model::nu_size; ++i) {
-    //     ss << last_detected_motor_position_(i);
-    //     if (i < model::nu_size - 1) { ss << ", "; }
-    // }
-    // ss << "] ";
-
-    // // Print Sent Torques
-    // ss << "Torque Sent: [";
-    // for (size_t i = 0; i < model::nu_size; ++i) {
-    //     // Use the final torque value from the command message
-    //     ss << command_msg->motor_commands[i].feedforward_torque;
-    //     if (i < model::nu_size - 1) { ss << ", "; }
-    // }
-    // ss << "]";
-    
-    // RCLCPP_INFO(this->get_logger(), "%s", ss.str().c_str());    
-    
+    // --- 3. Publish ---
+    torque_publisher_->publish(std::move(command_msg));
+    std::cout << "latency_ms (state ready to torque ready): " << latency_ms << std::endl; 
 }
