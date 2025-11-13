@@ -190,5 +190,5 @@ private:
 
     // Storage for the motor position detected at state read time
     Vector<model::nu_size> last_detected_motor_position_;    
-    
+    bool is_state_received_ = false;    
 };
