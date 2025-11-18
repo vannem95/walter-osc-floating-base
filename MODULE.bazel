@@ -86,29 +86,7 @@ bazel_dep(name = "rules_cc", version = "0.0.2")
 bazel_dep(name = "abseil-cpp", version = "20250127.0")
 
 # Eigen:
-# Correct block for MODULE.bazel
-# In your MODULE.bazel file:
-
 bazel_dep(name = "eigen", version = "4.0.0-20241125.bcr.1")
-
-# --- THIS BLOCK RESOLVES THE CONFLICTING REPOSITORY NAME ---
-multiple_version_override(
-    module_name = "eigen",
-    # List the required version and a dummy older version to satisfy syntax
-    versions = [
-        "4.0.0-20241125.bcr.1", 
-        "3.4.0.bcr.1" 
-    ],
-    # The final resolution will use the version listed in the 'bazel_dep'
-)
-
-# You should also keep your archive_override for the checksum and pathing fix:
-archive_override(
-    module_name = "eigen",
-    strip_prefix = "eigen-8ad4344ca79f2f248bc5ed70eec72e4b9c4d5e88", 
-    urls = ["https://gitlab.com/libeigen/eigen/-/archive/8ad4344ca79f2f248bc5ed70eec72e4b9c4d5e88/eigen-8ad4344ca79f2f248bc5ed70eec72e4b9c4d5e88.zip"],
-    integrity = "sha256-5GJV1GdHodYa7K5CQUs5522P8b7NGRTmeVbS9+QNESM=",
-)
 
 # OSQP Cpp Wrapper:
 bazel_dep(name = "osqp-cpp", version = "0.0.0-20231004-4343373.bcr.1")
