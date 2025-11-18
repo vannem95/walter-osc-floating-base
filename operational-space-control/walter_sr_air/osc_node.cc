@@ -339,7 +339,7 @@ void OSCNode::timer_callback() {
         update_mj_data(local_state); 
 
         // 2b. Define Targets and Calculate DDQ Commands 
-        double factor = 2.0;
+        double factor = 10.0;
         double shin_kp = 100.0*factor; double shin_kv = 5.0*factor;
         double thigh_kp = 100.0*factor; double thigh_kv = 5.0*factor;
         double shin_pos_target = 0.0;
