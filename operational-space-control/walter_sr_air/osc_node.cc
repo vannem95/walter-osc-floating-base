@@ -208,6 +208,11 @@ OSCNode::OSCNode(const std::string& xml_path)
     // torque_publisher_ = this->create_publisher<OSCTorqueCommand>("walter/command", 10);
     // New: 5000 microseconds (5 ms = 200 Hz)
     timer_ = this->create_wall_timer(std::chrono::microseconds(5000), std::bind(&OSCNode::timer_callback, this));
+
+    rclcpp::on_shutdown([this]() {
+        RCLCPP_WARN(this->get_logger(), "Shutdown signal received. Attempting to stop robot...");
+        this->stop_robot();
+    });    
 }
 
 OSCNode::~OSCNode() {
@@ -663,5 +668,53 @@ void OSCNode::publish_torque_command(bool safety_override_active_local,
             time_mujoco_update_ms_ + time_casadi_update_ms_ + time_osqp_solve_ms_);
     } else {
         RCLCPP_WARN(this->get_logger(), "Safety Override Active. Latency: %.3f ms", latency_ms);
+    }
+}
+
+
+void OSCNode::stop_robot() {
+    // 1. Constants for Safety Braking
+    const double SAFETY_KP = 0.0; // High stiffness to hold position
+    const double SAFETY_KD = 0.0;  // High damping to kill velocity
+    const int POSITION_CONTROL_MODE = 3; // Ensure this matches your driver's Enum
+    const int VELOCITY_CONTROL_MODE = 2; 
+
+    // 2. Prepare Command
+    auto command_msg = std::make_unique<Command>(); 
+    command_msg->master_gain = 1.0; 
+    command_msg->motor_commands.resize(model::nu_size);
+    command_msg->high_level_control_mode = 2; // Safety / Idle mode
+
+    const std::array<std::string, model::nu_size> MOTOR_NAMES = {
+        "rear_left_hip", "rear_left_knee", "rear_right_hip", "rear_right_knee",
+        "front_left_hip", "front_left_knee", "front_right_hip", "front_right_knee"};
+
+    // 4. Fill Command: "Freeze at current position"
+    for (size_t i = 0; i < model::nu_size; ++i) {
+        command_msg->motor_commands[i].name = MOTOR_NAMES[i];
+        
+        // Switch to Position Mode (or Velocity Mode with 0 target)
+        command_msg->motor_commands[i].control_mode = VELOCITY_CONTROL_MODE; 
+        
+        // Target = Last known position (Freeze)
+        command_msg->motor_commands[i].position_setpoint = 0.0;
+        command_msg->motor_commands[i].velocity_setpoint = 0.0;
+        command_msg->motor_commands[i].feedforward_torque = 0.0; // CRITICAL: Zero torque
+        
+        // Set gains high to resist movement
+        command_msg->motor_commands[i].kp = SAFETY_KP; 
+        command_msg->motor_commands[i].kd = SAFETY_KD;
+        command_msg->motor_commands[i].input_mode = 1;   
+        command_msg->motor_commands[i].enable = true; 
+    }
+
+    // 5. Publish Immediate Stop
+    // We assume the publisher is still valid because on_shutdown runs before destruction
+    if (torque_publisher_) {
+        torque_publisher_->publish(std::move(command_msg));
+        RCLCPP_INFO(this->get_logger(), ">>> SAFETY STOP COMMAND SENT <<<");
+        
+        // Optional: Sleep briefly to ensure message hits the network before process dies
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 }
