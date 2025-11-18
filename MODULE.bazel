@@ -87,7 +87,12 @@ bazel_dep(name = "abseil-cpp", version = "20250127.0")
 
 # Eigen:
 bazel_dep(name = "eigen", version = "4.0.0-20241125.bcr.1")
-
+# This block should solve the non-matching checksum problem.
+single_version_override(
+    module_name = "eigen",
+    version = "4.0.0-20241125.bcr.1",
+    registry = "https://bcr.bazel.build",
+)
 # OSQP Cpp Wrapper:
 bazel_dep(name = "osqp-cpp", version = "0.0.0-20231004-4343373.bcr.1")
 
