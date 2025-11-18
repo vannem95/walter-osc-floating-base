@@ -86,15 +86,16 @@ bazel_dep(name = "rules_cc", version = "0.0.2")
 bazel_dep(name = "abseil-cpp", version = "20250127.0")
 
 # Eigen:
+# Correct block for MODULE.bazel
 bazel_dep(name = "eigen", version = "4.0.0-20241125.bcr.1")
-# This block should solve the non-matching checksum problem.
 archive_override(
     module_name = "eigen",
+    # CRITICAL: This attribute tells Bazel to remove the top-level directory 
+    # inside the ZIP archive, ensuring paths are correct.
+    strip_prefix = "eigen-8ad4344ca79f2f248bc5ed70eec72e4b9c4d5e88", 
     # Use the exact GitLab URL that was causing the conflict.
-    # Bazel will download the archive from this specific commit ID (8ad4344ca79f2f248bc5ed70eec72e4b9c4d5e88).
-    urls = ["https://gitlab.com/libeigen/eigen/-/archive/8ad4344ca79f2f248bc5ed70eec72e4b9c4d5e88/eigen-8ad4344ca79f2f248bc5ed70eec72e4b9c4d5e88.zip"],    
-    # CRITICAL FIX: Use the actual checksum of the file that is currently being downloaded.
-    # (Checksum reported in the error: sha256-5GJV1GdHodYa7K5CQUs5522P8b7NGRTmeVbS9+QNESM=)
+    urls = ["https://gitlab.com/libeigen/eigen/-/archive/8ad4344ca79f2f248bc5ed70eec72e4b9c4d5e88/eigen-8ad4344ca79f2f248bc5ed70eec72e4b9c4d5e88.zip"],
+    # FINAL CHECKSUM FIX: The actual integrity value of the file the server returns.
     integrity = "sha256-5GJV1GdHodYa7K5CQUs5522P8b7NGRTmeVbS9+QNESM=",
 )
 
