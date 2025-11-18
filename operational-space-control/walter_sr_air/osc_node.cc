@@ -340,8 +340,8 @@ void OSCNode::timer_callback() {
 
         // 2b. Define Targets and Calculate DDQ Commands 
         double factor = 10.0;
-        double shin_kp = 100.0*factor; double shin_kv = 50.0*factor;
-        double thigh_kp = 100.0*factor; double thigh_kv = 50.0*factor;
+        double shin_kp = 100.0*factor; double shin_kv = 20.0*factor;
+        double thigh_kp = 100.0*factor; double thigh_kv = 20.0*factor;
         double shin_pos_target = 0.0;
         double thigh_pos_target = 0.55; 
         double rot_vel_target = 0.0; 
