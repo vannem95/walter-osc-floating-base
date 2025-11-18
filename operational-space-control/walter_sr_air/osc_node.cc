@@ -343,7 +343,7 @@ void OSCNode::timer_callback() {
         double shin_kp = 100.0*factor; double shin_kv = 5.0*factor;
         double thigh_kp = 100.0*factor; double thigh_kv = 5.0*factor;
         double shin_pos_target = 0.0;
-        double thigh_pos_target = 0.3; 
+        double thigh_pos_target = 0.534; 
         double rot_vel_target = 0.0; 
 
         // Shin DDQ Commands (using local_state)
