@@ -393,6 +393,16 @@ void OSCNode::timer_callback() {
         time_casadi_update_ms_ = std::chrono::duration<double, std::milli>(t_start_solve - t_start_casadi).count();
         time_osqp_solve_ms_ = std::chrono::duration<double, std::milli>(t_end_solve - t_start_solve).count();                
     }
+
+    if (!local_safety_override_active) {
+        std::lock_guard<std::mutex> lock(state_mutex_); // Quick lock
+        if (safety_override_active_) {
+            // Aha! The flag changed from false to true while we were calculating.
+            // Update our local copy so we send the safety command instead.
+            local_safety_override_active = true; 
+        }
+    }    
+
     // Publish using the determined safety status and the captured timestamp
     publish_torque_command(local_safety_override_active, local_state_read_time); 
 }
@@ -673,6 +683,12 @@ void OSCNode::publish_torque_command(bool safety_override_active_local,
 
 
 void OSCNode::stop_robot() {
+
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        safety_override_active_ = true;        
+    }    
+    
     // 1. Constants for Safety Braking
     const double SAFETY_KP = 0.0; // High stiffness to hold position
     const double SAFETY_KD = 0.0;  // High damping to kill velocity
