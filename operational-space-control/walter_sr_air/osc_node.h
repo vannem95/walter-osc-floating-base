@@ -83,6 +83,9 @@ public:
     OSCNode(const std::string& xml_path);
     ~OSCNode();
 
+    void stop_robot(); // New helper to send zero commands                                    
+
+
 private:
     // ROS 2 Callbacks
     void state_callback(const OSCMujocoState::SharedPtr msg);
@@ -101,7 +104,6 @@ private:
     // Now takes the safety status
     void publish_torque_command(bool safety_override_active_local, 
                                     std::chrono::time_point<std::chrono::high_resolution_clock> state_read_time_local);
-    void stop_robot(); // New helper to send zero commands                                    
     // Helper functions from the original main
     
     template <typename T>
