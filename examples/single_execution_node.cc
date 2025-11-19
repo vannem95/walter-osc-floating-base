@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
     // 1. Initialize ROS 2 WITHOUT default signal handlers
     // This prevents "Context Invalid" errors during shutdown
     rclcpp::InitOptions init_options;
-    init_options.shutdown_on_sigint = false; 
+    init_options.shutdown_on_signal = false; 
     rclcpp::init(argc, argv, init_options);
 
     // 2. Install our custom signal handler
