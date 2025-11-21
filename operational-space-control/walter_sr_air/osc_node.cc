@@ -347,7 +347,7 @@ void OSCNode::timer_callback() {
 
         // Sim - on ground
         // shin - (kp - 80*100 — kd - 80*10)
-        double shin_factor = 20.0;
+        double shin_factor = 30.0;
         double shin_kp = 100.0*shin_factor; double shin_kv = 10.0*shin_factor;
 
         // thigh - (kp - 10*100 — kd - 10*10)
