@@ -391,8 +391,18 @@ void OSCNode::timer_callback() {
         // --- TIMING POINT C: END CASADI/OSQP DATA, START SOLVE ---
         auto t_start_solve = std::chrono::high_resolution_clock::now();
         
-        solve_optimization();
+        // OLD: solve_optimization();
+        // NEW: Check result
+        bool solver_success = solve_optimization();
         
+        if (!solver_success) {
+            // CRITICAL: Trigger safety override immediately if math fails
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            safety_override_active_ = true;
+            local_safety_override_active = true; 
+            RCLCPP_ERROR(this->get_logger(), "Optimization failed! Engaging safety override.");
+        }
+                
         // --- TIMING POINT D: END SOLVE ---
         auto t_end_solve = std::chrono::high_resolution_clock::now();
         
