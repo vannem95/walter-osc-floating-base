@@ -583,10 +583,20 @@ absl::Status OSCNode::update_optimization(const Vector<model::contact_site_ids_s
 }
 
 // ===============================================================================================================
-void OSCNode::solve_optimization() {
+bool OSCNode::solve_optimization() {
     exit_code_ = solver_.Solve();
-    solution_ = solver_.primal_solution();
-    dual_solution_ = solver_.dual_solution();
+    
+    if (exit_code_ == OsqpExitCode::kOptimal) {
+        solution_ = solver_.primal_solution();
+        dual_solution_ = solver_.dual_solution();
+        return true;
+    } else {
+        // Clear the solution so we don't accidentally use old values
+        solution_.setZero(); 
+        
+        RCLCPP_WARN(this->get_logger(), "OSQP Solve Failed. Exit Code: %d", static_cast<int>(exit_code_));
+        return false;
+    }
 }
 
 // ===============================================================================================================
