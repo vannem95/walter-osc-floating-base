@@ -99,7 +99,8 @@ private:
     absl::Status set_up_optimization(const Vector<model::contact_site_ids_size>& contact_mask);
     // Now takes contact mask data to update bounds
     absl::Status update_optimization(const Vector<model::contact_site_ids_size>& contact_mask); 
-    void solve_optimization();
+    // void solve_optimization();
+    bool solve_optimization();
     void reset_optimization();
     // Now takes the safety status
     void publish_torque_command(bool safety_override_active_local, 
