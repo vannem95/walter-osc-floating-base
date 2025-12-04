@@ -697,8 +697,9 @@ void OSCNode::publish_torque_command(bool safety_override_active_local,
 
     if (!safety_override_active_local) {
         RCLCPP_INFO(this->get_logger(), 
-            "Latency: %.3f ms | **OS Wait: %.3f ms** | Kinematics: %.3f ms | CasADi: %.3f ms | OSQP Solve: %.3f ms | Total Internal: %.3f ms",
+            "Latency: %.3f ms | SolvCode: %d |**OS Wait: %.3f ms** | Kinematics: %.3f ms | CasADi: %.3f ms | OSQP Solve: %.3f ms | Total Internal: %.3f ms",
             latency_ms,
+            static_cast<int>(exit_code_),
             time_wait_for_execution_ms_, // NEW: Shows delay before computation starts            
             time_mujoco_update_ms_, 
             time_casadi_update_ms_, 
